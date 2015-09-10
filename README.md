@@ -113,7 +113,7 @@ let count =  store.count(YourModel.self)
 
 ## Update
 
-> Update is important because your object is not being observed for changes and therefore once your done changing a object you will need to save it
+> Update is important because your object is not being observed for changes and therefore once you're done changing a object you will need to save it
 
 ``` swift
 store.update(model)
