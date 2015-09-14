@@ -19,11 +19,12 @@ public class YapStore : Store {
     var searchableHandlers = [String: SearchHandler]()
     
     private let mainThreadConnection: YapDatabaseConnection
+    private let backgroundConnection: YapDatabaseConnection
     public var connection: YapDatabaseConnection {
         if NSThread.isMainThread() {
             return mainThreadConnection
         } else {
-            return database.newConnection()
+            return backgroundConnection//database.newConnection()
         }
     }
     
@@ -40,6 +41,7 @@ public class YapStore : Store {
         database = YapDatabase(path: path)
                 
         self.mainThreadConnection = database.newConnection()
+        self.backgroundConnection = database.newConnection()
         
         NSNotificationCenter.defaultCenter().addObserver(self,
             selector:"modified:",
@@ -101,7 +103,34 @@ public class YapStore : Store {
         }
         return object
     }
-
+    
+    public func advancedFind<T : Model where T: ManagedArchive>(id: String) -> T? {
+        let collection = String(T)
+        var object : T? = nil
+        connection.readWithBlock { transaction in
+            if transaction.hasObjectForKey(id, inCollection: collection) {
+                if let archive = transaction.objectForKey(id, inCollection: collection) as? Archive {
+                    object = T(archive: archive, store: self, transaction: transaction)
+                }
+            }
+        }
+        return object
+    }
+    
+    public func find<T : Model>(id: String, transaction: YapDatabaseReadTransaction) -> T? {
+        if let archive = transaction.objectForKey(id, inCollection: String(T)) as? Archive {
+            return T(archive: archive)
+        }
+        return nil
+    }
+    
+    public func find<T : Model where T: ManagedArchive>(id: String, transaction: YapDatabaseReadTransaction) -> T? {
+        if let archive = transaction.objectForKey(id, inCollection: String(T)) as? Archive {
+            return T(archive: archive, store: self, transaction: transaction)
+        }
+        return nil
+    }
+    
     public func filter<T : Model>(filter: (element: T) -> (Bool)) -> [T] {
         return all().filter(filter)
     }
@@ -114,6 +143,38 @@ public class YapStore : Store {
             }
         }
         return n
+    }
+    
+    // MARK: ASYNCREAD
+    
+    public func asyncFind<T : Model where T: ManagedArchive>(id: String, callback: (object: T?) -> ()) {
+        let collection = String(T)
+        var object : T? = nil
+        //For now we will assume that its ok to simply queue something onto the background connection
+        backgroundConnection.asyncReadWithBlock({ (transaction) -> Void in
+            if transaction.hasObjectForKey(id, inCollection: collection) {
+                if let archive = transaction.objectForKey(id, inCollection: collection) as? Archive {
+                    object = T(archive: archive, store: self, transaction: transaction)
+                }
+            }
+            }) { () -> Void in
+                callback(object: object)
+        }
+    }
+    
+    public func asyncFind<T : Model>(id: String, callback: (object: T?) -> ()) {
+        let collection = String(T)
+        var object : T? = nil
+        //For now we will assume that its ok to simply queue something onto the background connection
+        backgroundConnection.asyncReadWithBlock({ (transaction) -> Void in
+            if transaction.hasObjectForKey(id, inCollection: collection) {
+                if let archive = transaction.objectForKey(id, inCollection: collection) as? Archive {
+                    object = T(archive: archive)
+                }
+            }
+            }) { () -> Void in
+                callback(object: object)
+        }
     }
     
     // MARK: WRITE
@@ -167,7 +228,30 @@ public class YapStore : Store {
             transaction.setObject(object, forKey:key, inCollection: collection)
         }
     }
-
+    
+    // MARK: ASYNCWRITE
+    
+    public func asyncAdd<T : Model>(object: T) {
+        backgroundConnection.asyncReadWriteWithBlock { transaction in
+            transaction.setObject(object.archive, forKey:"\(object.uid)", inCollection: String(T))
+        }
+    }
+    
+    public func asyncAdd<T : Model where T: ManagedArchive>(object: T) {
+        backgroundConnection.asyncReadWriteWithBlock { (transaction) -> Void in
+            transaction.setObject(object.archive, forKey:"\(object.uid)", inCollection: String(T))
+            object.archiveRelationships(self, transaction: transaction)
+        }
+    }
+    
+    public func asyncUpdate<T: Model>(element: T) {
+        asyncAdd(element)
+    }
+    
+    public func save<T: Model>(object: T, transaction: YapDatabaseReadWriteTransaction) {
+        transaction.setObject(object.archive, forKey: "\(object.uid)", inCollection: String(T))
+    }
+    
     // MARK: INDEXES
     
     
@@ -399,6 +483,43 @@ public class YapStore : Store {
         return models
     }
     
+    func asyncFindModels<T: Model>(queryHash: [String: AnyObject], callback: (objects: [T]) -> ()) {
+        var query : YapDatabaseQuery? = nil
+        if let key = queryHash.keys.first {
+            
+            if let value: AnyObject = queryHash[key] {
+                query = YapDatabaseQuery.queryWithFormat("WHERE \(key) = ?", (value as! NSObject))
+            }
+        }
+        
+        if query == nil {
+            print("couldn't build query for \(queryHash)")
+            callback(objects: [])
+        }
+        
+        var models = [T]()
+        backgroundConnection.asyncReadWriteWithBlock({ (transaction) -> Void in
+            let index = transaction.ext("\(String(T))_index") as! YapDatabaseSecondaryIndexTransaction
+            
+            index.enumerateKeysAndObjectsMatchingQuery(query, usingBlock: { collection, _uid, object, _ in
+                print("\(collection) == \(String(T))")
+                if let archive = object as? Archive where collection == String(T) {
+                    models.append(T(archive: archive))
+                }
+            })
+            }) { () -> Void in
+                callback(objects: models)
+        }
+    }
+    
+    public func asyncFilter<T: Model>(key: String, value: Indexable, callback: (objects: [T]) -> ()) {
+        if let value: AnyObject = value as? AnyObject {
+            asyncFindModels([key: value], callback: callback)
+            return
+        }
+        callback(objects: [])
+    }
+    
     // MARK: - SEARCH
     
     public func search<T: Model>(string string: String) -> [T] {
@@ -420,7 +541,6 @@ public class YapStore : Store {
     public func search<T: Model>(phrase phrase: String) -> [T] {
         return search(string: "\"\(phrase)\"")
     }
-    
 }
 
 extension YapDatabaseQuery {

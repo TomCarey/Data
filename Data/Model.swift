@@ -5,6 +5,7 @@
 //  Created by Daniel Brooker on 16/03/15.
 //  Copyright (c) 2015 Nocturnal Code. All rights reserved.
 //
+import YapDatabase
 
 /// Data.Archive
 public typealias Archive = [String: AnyObject]
@@ -30,4 +31,11 @@ public extension Model {
 
 func ==<T: Model>(lhs: T, rhs: T) -> Bool {
     return lhs.uid == rhs.uid
+}
+
+public protocol ManagedArchive {
+    
+    init(archive: Archive, store: YapStore, transaction: YapDatabaseReadTransaction)
+    func archiveRelationships(store: YapStore, transaction: YapDatabaseReadWriteTransaction)
+    
 }
