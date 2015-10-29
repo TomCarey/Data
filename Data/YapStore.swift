@@ -61,9 +61,7 @@ public class YapStore : Store {
                     if let change = change as? YapCollectionKey {
                         let key = change.key
                         
-                        if key == nil {
-                            return
-                        }
+
                         NSNotificationCenter.defaultCenter().postNotificationName("dataStoreModified", object: nil, userInfo: ["id": key])
                     }
                 })
@@ -185,9 +183,23 @@ public class YapStore : Store {
         }
     }
     
+    public func add<T : Model where T: ManagedArchive>(object: T) {
+        connection.readWriteWithBlock { (transaction) -> Void in
+            transaction.setObject(object.archive, forKey:"\(object.uid)", inCollection: String(T))
+            object.archiveRelationships(self, transaction: transaction)
+        }
+    }
+    
+    
     public func remove<T : Model>(object: T) {
         connection.readWriteWithBlock { transaction in
             transaction.removeObjectForKey("\(object.uid)", inCollection: String(T))
+        }
+    }
+    
+    public func asyncRemove<T: Model>(element: T) {
+        backgroundConnection.asyncReadWriteWithBlock { (transaction) -> Void in
+            transaction.removeObjectForKey("\(element.uid)", inCollection: String(T))
         }
     }
 
@@ -462,25 +474,26 @@ public class YapStore : Store {
                 query = YapDatabaseQuery.queryWithFormat("WHERE \(key) = ?", (value as! NSObject))
             }
         }
-        
-        if query == nil {
+    
+        if let query = query {
+            var models = [T]()
+            connection.readWithBlock { transaction in
+                let index = transaction.ext("\(String(T))_index") as! YapDatabaseSecondaryIndexTransaction
+                
+                index.enumerateKeysAndObjectsMatchingQuery(query, usingBlock: { collection, _uid, object, _ in
+                    print("\(collection) == \(String(T))")
+                    if let archive = object as? Archive where collection == String(T) {
+                        models.append(T(archive: archive))
+                    }
+                })
+            }
+            
+            return models
+        } else {
             print("couldn't build query for \(queryHash)")
             return []
         }
         
-        var models = [T]()
-        connection.readWithBlock { transaction in
-            let index = transaction.ext("\(String(T))_index") as! YapDatabaseSecondaryIndexTransaction
-            
-            index.enumerateKeysAndObjectsMatchingQuery(query, usingBlock: { collection, _uid, object, _ in
-                print("\(collection) == \(String(T))")
-                if let archive = object as? Archive where collection == String(T) {
-                    models.append(T(archive: archive))
-                }
-            })
-        }
-        
-        return models
     }
     
     func asyncFindModels<T: Model>(queryHash: [String: AnyObject], callback: (objects: [T]) -> ()) {
@@ -492,23 +505,23 @@ public class YapStore : Store {
             }
         }
         
-        if query == nil {
+        if let query = query {
+            var models = [T]()
+            backgroundConnection.asyncReadWriteWithBlock({ (transaction) -> Void in
+                let index = transaction.ext("\(String(T))_index") as! YapDatabaseSecondaryIndexTransaction
+                
+                index.enumerateKeysAndObjectsMatchingQuery(query, usingBlock: { collection, _uid, object, _ in
+                    print("\(collection) == \(String(T))")
+                    if let archive = object as? Archive where collection == String(T) {
+                        models.append(T(archive: archive))
+                    }
+                })
+                }) { () -> Void in
+                    callback(objects: models)
+            }
+        } else {
             print("couldn't build query for \(queryHash)")
             callback(objects: [])
-        }
-        
-        var models = [T]()
-        backgroundConnection.asyncReadWriteWithBlock({ (transaction) -> Void in
-            let index = transaction.ext("\(String(T))_index") as! YapDatabaseSecondaryIndexTransaction
-            
-            index.enumerateKeysAndObjectsMatchingQuery(query, usingBlock: { collection, _uid, object, _ in
-                print("\(collection) == \(String(T))")
-                if let archive = object as? Archive where collection == String(T) {
-                    models.append(T(archive: archive))
-                }
-            })
-            }) { () -> Void in
-                callback(objects: models)
         }
     }
     
@@ -523,19 +536,21 @@ public class YapStore : Store {
     // MARK: - SEARCH
     
     public func search<T: Model>(string string: String) -> [T] {
-        if searchableFieldsByType.count == 0 {
-            print("Cannot search before setting up indexes")
-            return []
-        }
-        var results = [T]()
-        connection.readWithBlock { transaction in
-            transaction.ext("fts").enumerateKeysAndObjectsMatching(string, usingBlock: { collection, _, object, _ in // maybe don't always want objects, maybe only ids?
-                if let archive = object as? Archive where collection == String(T) {
-                    results.append(T(archive: archive))
-                }
-            })
-        }
-        return results
+        fatalError("TODO \(__FILE__):\(__LINE__) \(__FUNCTION__)")
+//        if searchableFieldsByType.count == 0 {
+//            print("Cannot search before setting up indexes")
+//            return []
+//        }
+//        var results = [T]()
+//        connection.readWithBlock { transaction in
+//            
+//            (transaction.ext("fts") as? YapDatabaseSecondaryIndexTransaction)?.enumerateKeysAndObjectsMatching(string, usingBlock: { collection, _, object, _ in // maybe don't always want objects, maybe only ids?
+//                if let archive = object as? Archive where collection == String(T) {
+//                    results.append(T(archive: archive))
+//                }
+//            })
+//        }
+//        return results
     }
     
     public func search<T: Model>(phrase phrase: String) -> [T] {

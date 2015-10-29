@@ -30,6 +30,7 @@ public protocol Store {
     // ASYNCWRITE
     func asyncAdd<T : Model>(object: T)
     func asyncUpdate<T: Model>(element: T)
+    func asyncRemove<T: Model>(element: T)
 
     // INDEXES
     func index<T: Model>(model : T)
@@ -41,6 +42,7 @@ public protocol Store {
     func search<T: Model>(string string: String) -> [T]
     func search<T: Model>(phrase phrase: String) -> [T]
     
+    func add<T : Model where T: ManagedArchive>(object: T)
     func asyncFind<T : Model where T: ManagedArchive>(id: String, callback: (object: T?) -> ())
     func asyncAdd<T : Model where T: ManagedArchive>(object: T)
     func save<T: Model>(object: T, transaction: YapDatabaseReadWriteTransaction)
