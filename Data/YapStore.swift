@@ -7,6 +7,8 @@
 //
 
 import YapDatabase
+import YapDatabase.YapDatabaseSecondaryIndex
+import YapDatabase.YapDatabaseFullTextSearch
 
 public class YapStore : Store {
     
