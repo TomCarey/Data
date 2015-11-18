@@ -262,9 +262,17 @@ public class YapStore : Store {
         asyncAdd(element)
     }
     
-    public func save<T: Model>(object: T, transaction: YapDatabaseReadWriteTransaction) {
+    public func save<T: Model where T: ManagedArchive>(object: T, transaction: YapDatabaseReadWriteTransaction) {
         transaction.setObject(object.archive, forKey: "\(object.uid)", inCollection: String(T))
+        object.archiveRelationships(self, transaction: transaction)
     }
+    
+//    public func save<T: Model>(object: T, transaction: YapDatabaseReadWriteTransaction) {
+//        transaction.setObject(object.archive, forKey: "\(object.uid)", inCollection: String(T))
+//        if object is ManagedArchive {
+//            print("Woah")
+//        }
+//    }
     
     // MARK: INDEXES
     

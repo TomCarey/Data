@@ -45,6 +45,7 @@ public protocol Store {
     func add<T : Model where T: ManagedArchive>(object: T)
     func asyncFind<T : Model where T: ManagedArchive>(id: String, callback: (object: T?) -> ())
     func asyncAdd<T : Model where T: ManagedArchive>(object: T)
-    func save<T: Model>(object: T, transaction: YapDatabaseReadWriteTransaction)
+    //func save<T: Model>(object: T, transaction: YapDatabaseReadWriteTransaction)
+    func save<T: Model where T: ManagedArchive>(object: T, transaction: YapDatabaseReadWriteTransaction)
     func advancedFind<T : Model where T: ManagedArchive>(id: String) -> T?
 }
